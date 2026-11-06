@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>ohmarchy book</title>
+<style>
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+font-family:system-ui,"PingFang SC","Noto Sans CJK SC",sans-serif;background:#f1f5f9;color:#0f172a}
+form{background:#fff;padding:32px 36px;border-radius:14px;box-shadow:0 6px 28px rgba(15,23,42,.10);width:300px}
+h1{font-size:19px;margin:0 0 6px}p{margin:0 0 18px;color:#475569;font-size:14px;line-height:1.6}
+input{width:100%;box-sizing:border-box;font-size:16px;padding:10px 12px;border:1px solid #cbd5e1;border-radius:8px}
+button{margin-top:14px;width:100%;font-size:15px;padding:10px;border:0;border-radius:8px;background:#2563eb;color:#fff;cursor:pointer}
+button:disabled{background:#94a3b8;cursor:default}
+.note{margin:14px 0 0;font-size:12px;color:#64748b}
+</style>
+</head>
+<body>
+<form id="f">
+<h1>ohmarchy book</h1><p>在鸿蒙电脑上运行 Omarchy。请输入访问密码。</p>
+<input id="pw" type="password" autofocus autocomplete="current-password" placeholder="密码">
+<button id="go" type="submit">进入</button>
+<p class="note" id="note"></p>
+</form>
+<script>
+const P = {"v":1,"salt":"140f16a36b62a48473d7caf8868ef81a","iter":1200000,"base":"/book/"};
+const note = document.getElementById('note');
+const unhex = (s) => new Uint8Array(s.match(/../g).map((h) => parseInt(h, 16)));
+if (!('serviceWorker' in navigator) || !window.isSecureContext) {
+  note.textContent = '这个浏览器不支持 Service Worker，打不开这本书。';
+  document.getElementById('go').disabled = true;
+} else {
+  navigator.serviceWorker.register(P.base + 'sw.js', { scope: P.base });
+}
+function store(key) {
+  return new Promise((ok, no) => {
+    const r = indexedDB.open('ohmarchy-book', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('k');
+    r.onerror = () => no(r.error);
+    r.onsuccess = () => {
+      const t = r.result.transaction('k', 'readwrite');
+      t.objectStore('k').put({ key, salt: P.salt }, 'root');
+      t.oncomplete = ok; t.onerror = () => no(t.error);
+    };
+  });
+}
+document.getElementById('f').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const go = document.getElementById('go');
+  go.disabled = true; go.textContent = '正在生成密钥…';
+  const pw = new TextEncoder().encode(document.getElementById('pw').value);
+  const k = await crypto.subtle.importKey('raw', pw, 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: unhex(P.salt), iterations: P.iter }, k, 256);
+  await store(await crypto.subtle.importKey('raw', bits, 'HKDF', false, ['deriveKey']));
+  await navigator.serviceWorker.ready;
+  if (!navigator.serviceWorker.controller) {
+    await new Promise((ok) => navigator.serviceWorker.addEventListener('controllerchange', ok, { once: true }));
+  }
+  location.reload();
+});
+</script>
+</body>
+</html>
